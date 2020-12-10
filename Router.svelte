@@ -366,13 +366,16 @@ class RouteItem {
      * @returns {bool} Returns true if all the conditions succeeded
      */
     async checkConditions(detail) {
+        let routeDetail = { ...detail };
         for (let i = 0; i < this.conditions.length; i++) {
-            if (!(await this.conditions[i](detail))) {
+            const result = await this.conditions[i](routeDetail);
+            if (!(result)) {
                 return false
             }
+            routeDetail = { ...routeDetail, ...result };
         }
 
-        return true
+        return routeDetail
     }
 }
 
@@ -458,26 +461,41 @@ loc.subscribe(async (newLoc) => {
             continue
         }
 
-        const detail = {
+        let detail = {
             route: routesList[i].path,
             location: newLoc.location,
             querystring: newLoc.querystring,
+            params: {},
             userData: routesList[i].userData
         }
 
+        console.log('got a match', detail);
+
+        if (match && typeof match == 'object' && Object.keys(match).length) {
+            detail.params = {...match}
+        }
+
         // Check if the route can be loaded - if all conditions succeed
-        if (!(await routesList[i].checkConditions(detail))) {
+        const result = await routesList[i].checkConditions(detail)
+        
+        if (result) {
+            if (typeof result == 'object') {
+                detail = {...detail, ...result}
+            }
+        }
+        else {
             // Don't display anything
             component = null
             componentObj = null
             // Trigger an event to notify the user, then exit
             dispatchNextTick('conditionsFailed', detail)
-            return
+            i++
+            continue
         }
         
         // Trigger an event to alert that we're loading the route
         // We need to clone the object on every event invocation so we don't risk the object to be modified in the next tick
-        dispatchNextTick('routeLoading', Object.assign({}, detail))
+        dispatchNextTick('routeLoading', {...detail})
 
         // If there's a component to show while we're loading the route, display it
         const obj = routesList[i].component
@@ -491,10 +509,11 @@ loc.subscribe(async (newLoc) => {
 
                 // Trigger the routeLoaded event for the loading component
                 // Create a copy of detail so we don't modify the object for the dynamic route (and the dynamic route doesn't modify our object too)
-                dispatchNextTick('routeLoaded', Object.assign({}, detail, {
+                dispatchNextTick('routeLoaded', {
+                    ...detail,
                     component: component,
                     name: component.name
-                }))
+                })
             }
             else {
                 component = null
@@ -515,24 +534,35 @@ loc.subscribe(async (newLoc) => {
             componentObj = obj
         }
 
+        let newComponentParams = {}
+
+        if (Object.keys(detail.params).length > 0) {
+            newComponentParams = detail.params
+        }
+
         // Set componentParams only if we have a match, to avoid a warning similar to `<Component> was created with unknown prop 'params'`
         // Of course, this assumes that developers always add a "params" prop when they are expecting parameters
         if (match && typeof match == 'object' && Object.keys(match).length) {
-            componentParams = match
+            newComponentParams = {...newComponentParams, ...match}
+        }
+
+        if (Object.keys(newComponentParams).length > 0) {
+            componentParams = newComponentParams
         }
         else {
             componentParams = null
         }
-
+        
         // Set static props, if any
         props = routesList[i].props
 
         // Dispatch the routeLoaded event then exit
         // We need to clone the object on every event invocation so we don't risk the object to be modified in the next tick
-        dispatchNextTick('routeLoaded', Object.assign({}, detail, {
+        dispatchNextTick('routeLoaded', {
+            ...detail,
             component: component,
             name: component.name
-        }))
+        })
         return
     }
 
