@@ -372,7 +372,9 @@ class RouteItem {
             if (!(result)) {
                 return false
             }
-            routeDetail = { ...routeDetail, ...result };
+            if (result && typeof result == 'object' && Object.keys(result).length) {
+                routeDetail = { ...routeDetail, ...result };
+            }
         }
 
         return routeDetail
